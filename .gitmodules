@@ -1,0 +1,3 @@
+[submodule "src/submodules/yoga-wasm-web"]
+	path = src/submodules/yoga-wasm-web
+	url = git@github.com:bcherny/yoga-wasm-web.git
