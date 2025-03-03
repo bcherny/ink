@@ -3,6 +3,7 @@ import chalk, {type ForegroundColorName} from 'chalk';
 import {type LiteralUnion} from 'type-fest';
 import colorize from '../colorize.js';
 import {type Styles} from '../styles.js';
+import {type OutputTransformerResult} from '../render-node-to-output.js';
 
 export type Props = {
 	/**
@@ -53,6 +54,11 @@ export type Props = {
 	readonly wrap?: Styles['textWrap'];
 
 	readonly children?: ReactNode;
+
+        /**
+          * Whether this text is semantically a prompt.
+         */
+	readonly osc133prompt?: boolean;
 };
 
 /**
@@ -68,13 +74,14 @@ export default function Text({
 	strikethrough = false,
 	inverse = false,
 	wrap = 'wrap',
+	osc133prompt = false,
 	children,
 }: Props) {
 	if (children === undefined || children === null) {
 		return null;
 	}
 
-	const transform = (children: string): string => {
+	const transform = (children: string): OutputTransformerResult => {
 		if (dimColor) {
 			children = chalk.dim(children);
 		}
@@ -107,7 +114,10 @@ export default function Text({
 			children = chalk.inverse(children);
 		}
 
-		return children;
+		return {
+			line: children,
+			isPrompt: osc133prompt,
+		};
 	};
 
 	return (
