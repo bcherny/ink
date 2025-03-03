@@ -22,12 +22,19 @@ declare namespace Ink {
 		style?: Except<Styles, 'textWrap'>;
 	};
 
+        export type OutputTransformerResult = {
+                line: string,
+                isPrompt?: boolean,
+                [x: string]: any,
+        } | string;
+
 	type Text = {
 		children?: ReactNode;
 		key?: Key;
 		style?: Styles;
 
 		// eslint-disable-next-line @typescript-eslint/naming-convention
-		internal_transform?: (children: string, index: number) => string;
+		internal_transform?: (children: string, index: number) =>
+			OutputTransformerResult;
 	};
 }

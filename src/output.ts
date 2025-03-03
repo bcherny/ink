@@ -21,6 +21,8 @@ import stringWidth from 'string-width';
 type Options = {
 	width: number;
 	height: number;
+	startOscPrompt?: string;
+	endOscPrompt?: string;
 };
 
 type Operation = WriteOperation | ClipOperation | UnclipOperation;
@@ -52,18 +54,19 @@ type UnclipOperation = {
 export default class Output {
 	width: number;
 	height: number;
+	startOscPrompt: string;
+	endOscPrompt: string;
 
 	private readonly operations: Operation[] = [];
 
 	private charCache: {[line: string]: StyledChar[]} = {};
-	private styledCharsToStringCache: {[serializedStyledChars: string]: string} =
-		{};
+	private styledCharsToStringCache: {[serializedStyledChars: string]: string} = {};
 
-	constructor(options: Options) {
-		const {width, height} = options;
-
+	constructor({width, height, startOscPrompt, endOscPrompt}: Options) {
 		this.width = width;
 		this.height = height;
+		this.startOscPrompt = startOscPrompt ?? '!!!!<!!!!';
+		this.endOscPrompt = endOscPrompt ?? '!!!!>!!!!';
 	}
 
 	write(
@@ -101,8 +104,10 @@ export default class Output {
 	}
 
 	get(): {output: string; height: number} {
-		// Initialize output array with a specific set of rows, so that margin/padding at the bottom is preserved
+		// Initialize output array with a specific set of rows
 		const output: StyledChar[][] = [];
+		// Create local array to track prompt lines for this render
+		const isPromptLine = new Array(this.height).fill(false);
 
 		for (let y = 0; y < this.height; y++) {
 			const row: StyledChar[] = [];
@@ -192,15 +197,23 @@ export default class Output {
 				let offsetY = 0;
 
 				for (let [index, line] of lines.entries()) {
-					const currentLine = output[y + offsetY];
+					const currentY = y + offsetY;
+					const currentLine = output[currentY];
 
-					// Line can be missing if `text` is taller than height of pre-initialized `this.output`
+					// Line can be missing if `text` is taller than height of pre-initialized output
 					if (!currentLine) {
 						continue;
 					}
 
 					for (const transformer of transformers) {
-						line = transformer(line, index);
+						let result = transformer(line, index);
+                                                if (typeof result == 'string') {
+                                                        result = {line: result};
+                                                }
+
+                                                if (result?.isPrompt) {
+                                                        isPromptLine[currentY] = true;
+                                                }
 					}
 
 					if (!this.charCache.hasOwnProperty(line)) {
@@ -235,22 +248,61 @@ export default class Output {
 			}
 		}
 
-		const generatedOutput = output
-			.map(line => {
-				// See https://github.com/vadimdemedes/ink/pull/564#issuecomment-1637022742
-				const lineWithoutEmptyItems = line.filter(item => item !== undefined);
+		// Group lines by isPrompt to add OSC control sequences at boundaries
+		let currentIsPrompt = false;
+		let result = '';
 
-				const key = JSON.stringify(lineWithoutEmptyItems);
-				if (!this.styledCharsToStringCache.hasOwnProperty(key)) {
-					const result = styledCharsToString(lineWithoutEmptyItems).trimEnd();
-					this.styledCharsToStringCache[key] = result;
-				}
-				return this.styledCharsToStringCache[key];
-			})
-			.join('\n');
+		// Process output lines and add OSC prompt markers at group boundaries
+		for (let i = 0; i < output.length; i++) {
+			const line = output[i]!;
+
+			// Skip empty lines at the end
+			if (i === output.length - 1 && line.every(char => char.value === ' ')) {
+				continue;
+			}
+
+			// See https://github.com/vadimdemedes/ink/pull/564#issuecomment-1637022742
+			const lineWithoutEmptyItems = line.filter(item => item !== undefined);
+
+			const key = JSON.stringify(lineWithoutEmptyItems);
+			if (!this.styledCharsToStringCache.hasOwnProperty(key)) {
+				const result = styledCharsToString(lineWithoutEmptyItems).trimEnd();
+				this.styledCharsToStringCache[key] = result;
+			}
+
+			const lineText = this.styledCharsToStringCache[key];
+
+			// Use our local tracking array
+			const isPromptLineValue = isPromptLine[i];
+
+			// Add prompt start marker at group boundaries
+			if (!currentIsPrompt && isPromptLineValue) {
+				result += this.startOscPrompt;
+				currentIsPrompt = true;
+			}
+
+			// Add prompt end marker at group boundaries
+			if (currentIsPrompt && !isPromptLineValue) {
+				result += this.endOscPrompt;
+				currentIsPrompt = false;
+			}
+
+			// Add the line
+			result += lineText;
+
+			// Add newline if not the last line
+			if (i < output.length - 1) {
+				result += '\n';
+			}
+		}
+
+		// Ensure prompt is closed at the end if needed
+		if (currentIsPrompt) {
+			result += this.endOscPrompt;
+		}
 
 		return {
-			output: generatedOutput,
+			output: result,
 			height: output.length,
 		};
 	}

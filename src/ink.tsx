@@ -17,6 +17,11 @@ import Yoga from 'yoga-wasm-web/auto';
 
 const noop = () => {};
 
+const oscPromptStartRefreshLine = '\x1b]133;A\x07';
+const oscPromptEnd = '\x1b]133;B\x07';
+const oscCommandStart = '\x1b]133;C\x07';
+const oscCommandEnd = '\x1b]133;D\x07';
+
 export type Options = {
 	stdout: NodeJS.WriteStream;
 	stdin: NodeJS.ReadStream;
@@ -26,6 +31,12 @@ export type Options = {
 	patchConsole: boolean;
 	waitUntilExit?: () => Promise<void>;
 	onFlicker?: () => unknown;
+};
+
+const stripPrefixIfPresent = (prefix: string, s: string): string => {
+	return s.startsWith(prefix)
+	? s.substring(prefix.length)
+	: s;
 };
 
 export default class Ink {
@@ -69,6 +80,11 @@ export default class Ink {
 		// This variable is used only in debug mode to store full static output
 		// so that it's rerendered every time, not just new static parts, like in non-debug mode
 		this.fullStaticOutput = '';
+
+		// Emit initial OSC 133 prompt start escape
+		if (!isInCi) {
+			options.stdout.write(oscPromptStartRefreshLine);
+		}
 
 		// Unmount when process exits
 		this.unsubscribeExit = signalExit(this.unmount, {alwaysLast: false});
@@ -157,14 +173,50 @@ export default class Ink {
 			return;
 		}
 
-		const {output, outputHeight, staticOutput} = render(this.rootNode);
+		// Need to use oscPromptStartRefreshLine because iTerm2 doesn't
+		// support the more flexible oscPromptStart; the Output class has
+		// logic for making sure that we send oscPromptStartRefreshLine only
+		// at the start of the line, where it won't move cursor.
+		let startOscPrompt = oscPromptStartRefreshLine;
+		let endOscPrompt = oscPromptEnd;
+		let startOscCommand = oscCommandStart;
+		let endOscCommand = oscCommandEnd;
+
+		// Colors make everything more fun.
+		if (this.options.debug) {
+			// Dark blue is for prompt mode.  Exiting prompt
+			// mode resets the background color.
+			startOscPrompt += '\x1b[48;5;17m';
+			endOscPrompt = '\x1b[49m' + endOscPrompt;
+
+			// Dark red for command mode.  Likewise, reset
+			// color on exit.
+			startOscCommand += '\x1b[48;5;52m';
+			endOscCommand = '\x1b[49m' + endOscCommand;
+		}
+
+		// For render() output purposes, we assume we're in command mode,
+		// so whenever we enter prompt mode we leave command mode, and whenever
+		// we leave prompt mode, we re-enter command mode.
+		const {output, outputHeight, staticOutput} = render(
+			this.rootNode,
+			endOscCommand + startOscPrompt,
+			endOscPrompt + startOscCommand);
 
 		// If <Static> output isn't empty, it means new children have been added to it
 		const hasStaticOutput = staticOutput && staticOutput !== '\n';
 
+		// For static output, we assume we're in prompt mode to start.
+		const wrappedStaticOutput = hasStaticOutput
+				   ? (endOscPrompt +
+				      startOscCommand +
+				      staticOutput /* assume ends with \n */ +
+				      startOscPrompt)
+				   : staticOutput;
+
 		if (this.options.debug) {
 			if (hasStaticOutput) {
-				this.fullStaticOutput += staticOutput;
+				this.fullStaticOutput += wrappedStaticOutput;
 			}
 
 			this.options.stdout.write(this.fullStaticOutput + output);
@@ -173,7 +225,7 @@ export default class Ink {
 
 		if (isInCi) {
 			if (hasStaticOutput) {
-				this.options.stdout.write(staticOutput);
+				this.options.stdout.write(wrappedStaticOutput);
 			}
 
 			this.lastOutput = output;
@@ -182,8 +234,21 @@ export default class Ink {
 		}
 
 		if (hasStaticOutput) {
-			this.fullStaticOutput += staticOutput;
+			this.fullStaticOutput += wrappedStaticOutput;
 		}
+
+		const writeFullStaticOutput = () => {
+			// fullStaticOutput has embedded prompt-end prompt-start OSC133
+			// sequences; it expects to be printed in the in-prompt state.
+			// Strip any leading prompt-stop off the string when we print
+			// it so that it's appropriate to print in our non-prompt-start
+			// context.  We add an extra newline to match what logOutput does.
+			this.options.stdout.write(
+				endOscPrompt +
+				ansiEscapes.clearTerminal +
+				stripPrefixIfPresent(endOscPrompt, this.fullStaticOutput) +
+				output + '\n');
+		};
 
 		if (
 			outputHeight >= this.options.stdout.rows ||
@@ -192,10 +257,7 @@ export default class Ink {
 			if (this.options.onFlicker) {
 				this.options.onFlicker();
 			}
-			// We add an extra newline to match what logOutput does
-			this.options.stdout.write(
-				ansiEscapes.clearTerminal + this.fullStaticOutput + output + '\n',
-			);
+			writeFullStaticOutput();
 			this.lastOutput = output;
 			this.lastOutputHeight = outputHeight;
 			// Account for the extra newline
@@ -204,9 +266,7 @@ export default class Ink {
 		}
 
 		if (didResize) {
-			this.options.stdout.write(
-				ansiEscapes.clearTerminal + this.fullStaticOutput + output + '\n',
-			);
+			writeFullStaticOutput();
 			this.lastOutput = output;
 			this.lastOutputHeight = outputHeight;
 			this.log.updateLineCount(output + '\n');
@@ -216,7 +276,10 @@ export default class Ink {
 		// To ensure static output is cleanly rendered before main output, clear main output first
 		if (hasStaticOutput) {
 			this.log.clear();
-			this.options.stdout.write(staticOutput);
+			// wrappedStaticOutput sends prompt-end, command-out-start,
+			// the incremental static output, and then prompt-start.
+			// Pre- and post-condition: in OSC133 prompt mode
+			this.options.stdout.write(wrappedStaticOutput);
 			this.throttledLog(output);
 		}
 
@@ -309,8 +372,18 @@ export default class Ink {
 		// only render last frame of non-static output
 		if (isInCi) {
 			this.options.stdout.write(this.lastOutput + '\n');
-		} else if (!this.options.debug) {
-			this.log.done();
+		} else {
+			if (!this.options.debug) {
+				this.log.done();
+			}
+
+			// End the prompt at unmount.  Reset background color
+			// if we were debugging.
+			if (this.options.debug) {
+				this.options.stdout.write('\x1b[49m');
+			}
+
+			this.options.stdout.write(oscPromptEnd);
 		}
 
 		this.isUnmounted = true;
