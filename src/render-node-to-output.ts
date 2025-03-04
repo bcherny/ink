@@ -26,7 +26,13 @@ const applyPaddingToText = (node: DOMElement, text: string): string => {
 	return text;
 };
 
-export type OutputTransformer = (s: string, index: number) => string;
+export type OutputTransformerResult = {
+        line: string,
+        isPrompt?: boolean,
+        [x: string]: any,
+} | string;
+
+export type OutputTransformer = (s: string, index: number) => OutputTransformerResult;
 
 // After nodes are laid out, render each to output object, which later gets rendered to terminal
 const renderNodeToOutput = (
