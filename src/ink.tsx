@@ -18,6 +18,17 @@ const isInCi = Boolean(process.env["CI"]);
 
 const noop = () => {};
 
+// OSC133 terminal escapes for marking parts of the output
+// as prompt or command output, as if we were a shell.
+//
+// We need both prompt and command markers: terminal UI affordances
+// use both.  For example, kitty has a command
+// (bound to control-shift-g by default) that displays the last output
+// chunkin a pager.
+//
+// See https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md
+// and https://iterm2.com/documentation-escape-codes.html
+
 const oscPromptStartRefreshLine = '\x1b]133;A\x07';
 const oscPromptEnd = '\x1b]133;B\x07';
 const oscCommandStart = '\x1b]133;C\x07';
@@ -194,6 +205,14 @@ export default class Ink {
 			// color on exit.
 			startOscCommand += '\x1b[48;5;52m';
 			endOscCommand = '\x1b[49m' + endOscCommand;
+		}
+
+		// ... CI is not for fun.
+		if (isInCi) {
+			startOscPrompt = '';
+			endOscCommand = '';
+			startOscCommand = '';
+			endOscCommand = '';
 		}
 
 		// For render() output purposes, we assume we're in command mode,
