@@ -56,7 +56,10 @@ export type Props = {
 	readonly children?: ReactNode;
 
         /**
-          * Whether this text is semantically a prompt.
+         * This property tells Ink to mark any line containing
+         * this text as a prompt using terminal control codes.  Many terminal
+         * emulators have UI affordances for navigating between prompts and
+         * segmenting the scrollback on prompt boundaries.
          */
 	readonly osc133prompt?: boolean;
 };
