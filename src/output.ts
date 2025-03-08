@@ -215,6 +215,8 @@ export default class Output {
                                                 if (result?.isPrompt) {
                                                         isPromptLine[currentY] = true;
                                                 }
+
+						line = result.line;
 					}
 
 					if (!this.charCache.hasOwnProperty(line)) {
