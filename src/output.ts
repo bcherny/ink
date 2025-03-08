@@ -64,9 +64,10 @@ export default class Output {
 
 	constructor({width, height, startOscPrompt, endOscPrompt}: Options) {
 		this.width = width;
-		this.height = height;
-		this.startOscPrompt = startOscPrompt ?? '!!!!<!!!!';
-		this.endOscPrompt = endOscPrompt ?? '!!!!>!!!!';
+		// Sometimes we get bogus heights like 8.529591648468016e-40
+		this.height = height < 1 ? 0 : height;
+		this.startOscPrompt = startOscPrompt || '';
+		this.endOscPrompt = endOscPrompt || '';
 	}
 
 	write(
