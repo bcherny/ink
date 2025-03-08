@@ -48,6 +48,7 @@ export type Options = {
 	patchConsole: boolean;
 	waitUntilExit?: () => Promise<void>;
 	onFlicker?: () => unknown;
+	osc133?: boolean;
 };
 
 const stripPrefixIfPresent = (prefix: string, s: string): string => {
@@ -198,10 +199,22 @@ export default class Ink {
 		// support the more flexible oscPromptStart; the Output class has
 		// logic for making sure that we send oscPromptStartRefreshLine only
 		// at the start of the line, where it won't move cursor.
-		let startOscPrompt = oscPromptStartRefreshLine;
-		let endOscPrompt = oscPromptEnd;
-		let startOscCommand = oscCommandStart;
-		let endOscCommand = oscCommandEnd;
+		let startOscPrompt: string;
+		let endOscPrompt: string;
+		let startOscCommand: string;
+		let endOscCommand: string;
+
+		if (isInCi || !this.options.osc133) {
+			startOscPrompt = '';
+			endOscPrompt = '';
+			startOscCommand = '';
+			endOscCommand = '';
+		} else {
+			startOscPrompt = oscPromptStartRefreshLine;
+			endOscPrompt = oscPromptEnd;
+			startOscCommand = oscCommandStart;
+			endOscCommand = oscCommandEnd;
+		}
 
 		// Colors make everything more fun.
 		if (this.options.debug) {
@@ -214,14 +227,6 @@ export default class Ink {
 			// color on exit.
 			startOscCommand += '\x1b[48;5;52m';
 			endOscCommand = '\x1b[49m' + endOscCommand;
-		}
-
-		// ... CI is not for fun.
-		if (isInCi) {
-			startOscPrompt = '';
-			endOscCommand = '';
-			startOscCommand = '';
-			endOscCommand = '';
 		}
 
 		// For render() output purposes, we assume we're in command mode,
