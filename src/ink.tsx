@@ -18,6 +18,11 @@ const isInCi = Boolean(process.env["CI"]);
 
 const noop = () => {};
 
+// Regex to match OSC133 escape sequences
+// These sequences start with ESC ] 133; and end with BEL (x07) or ESC \
+// We need to strip these from non-static output to prevent terminal state desynchronization
+const anyOsc133Regex = /\x1b\]133;[^\x07\x1b]*(\x07|\x1b\\)/g;
+
 // OSC133 terminal escapes for marking parts of the output
 // as prompt or command output, as if we were a shell.
 //
@@ -50,6 +55,10 @@ const stripPrefixIfPresent = (prefix: string, s: string): string => {
 	? s.substring(prefix.length)
 	: s;
 };
+
+function stripOsc133(s: string): string {
+	return s.replace(anyOsc133Regex, '');
+}
 
 export default class Ink {
 	private readonly options: Options;
@@ -300,11 +309,11 @@ export default class Ink {
 			// the incremental static output, and then prompt-start.
 			// Pre- and post-condition: in OSC133 prompt mode
 			this.options.stdout.write(wrappedStaticOutput);
-			this.throttledLog(output);
+			this.throttledLog(stripOsc133(output));
 		}
 
 		if (!hasStaticOutput && output !== this.lastOutput) {
-			this.throttledLog(output);
+			this.throttledLog(stripOsc133(output));
 		}
 
 		this.lastOutput = output;
@@ -345,7 +354,7 @@ export default class Ink {
 		}
 
 		this.log.clear();
-		this.options.stdout.write(data);
+		this.options.stdout.write(stripOsc133(data));
 		this.log(this.lastOutput);
 	}
 
@@ -366,7 +375,7 @@ export default class Ink {
 		}
 
 		this.log.clear();
-		this.options.stderr.write(data);
+		this.options.stderr.write(stripOsc133(data));
 		this.log(this.lastOutput);
 	}
 
