@@ -64,8 +64,7 @@ export default class Output {
 
 	constructor({width, height, startOscPrompt, endOscPrompt}: Options) {
 		this.width = width;
-		// Sometimes we get bogus heights like 8.529591648468016e-40
-		this.height = height < 1 ? 0 : height;
+		this.height = height;
 		this.startOscPrompt = startOscPrompt || '';
 		this.endOscPrompt = endOscPrompt || '';
 	}
@@ -105,10 +104,10 @@ export default class Output {
 	}
 
 	get(): {output: string; height: number} {
-		// Initialize output array with a specific set of rows
 		const output: StyledChar[][] = [];
-		// Create local array to track prompt lines for this render
-		const isPromptLine = new Array(this.height).fill(false);
+		// Per-line flag indicating whether any widget on that line
+		// is a prompt.
+		const isPromptLine: boolean[] = [];
 
 		for (let y = 0; y < this.height; y++) {
 			const row: StyledChar[] = [];
@@ -123,6 +122,7 @@ export default class Output {
 			}
 
 			output.push(row);
+			isPromptLine.push(false);
 		}
 
 		const clips: Clip[] = [];
