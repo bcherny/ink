@@ -104,7 +104,7 @@ export default class Ink {
 		this.fullStaticOutput = '';
 
 		// Emit initial OSC 133 prompt start escape
-		if (!isInCi) {
+		if (!isInCi && options.osc133) {
 			options.stdout.write(oscPromptStartRefreshLine);
 		}
 
