@@ -39,8 +39,20 @@ const oscPromptEnd = '\x1b]133;B\x07';
 const oscCommandStart = '\x1b]133;C\x07';
 const oscCommandEnd = '\x1b]133;D\x07';
 
+// Control codes to start and stop atomic updates.
+// This way, the user doesn't observe flickering in the middle of big updates
+// like scrollback refresh.
+// https://gitlab.com/gnachman/iterm2/-/wikis/synchronized-updates-spec
+
+// These are enabled unconditionally because there is only upside.
+// Terminals that don't know about these sequences ignore them, and
+// those that do (kitty, iTerm2, Wezterm, conhost.exe, etc.) get a
+// big performance win.
+const atomicUpdateStart = '\x1b[?2026h';
+const atomicUpdateEnd = '\x1b[?2026l';
+
 export type Options = {
-	stdout: NodeJS.WriteStream;
+  stdout: NodeJS.WriteStream;
 	stdin: NodeJS.ReadStream;
 	stderr: NodeJS.WriteStream;
 	debug: boolean;
@@ -186,6 +198,21 @@ export default class Ink {
 	};
 
 	onRender(didResize = false) {
+		// Ask terminal emulators not to redraw the framebuffer
+		// while we're in the middle of a atomic update.  Avoids flicker.
+		try {
+			if (!isInCi) {
+				this.options.stdout.write(atomicUpdateStart);
+			}
+			this.onRenderInternal(didResize);
+		} finally {
+			if (!isInCi) {
+				this.options.stdout.write(atomicUpdateEnd);
+			}
+		}
+	};
+
+	onRenderInternal(didResize: boolean) {
 		if (this.isUnmounted) {
 			return;
 		}
