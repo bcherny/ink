@@ -15,6 +15,7 @@ import App from './components/App.js';
 import Yoga from 'yoga-wasm-web/auto';
 
 const isInCi = Boolean(process.env["CI"]);
+const isTTY = process.stdout.isTTY;
 
 const noop = () => {};
 
@@ -201,12 +202,12 @@ export default class Ink {
 		// Ask terminal emulators not to redraw the framebuffer
 		// while we're in the middle of a atomic update.  Avoids flicker.
 		try {
-			if (!isInCi) {
+			if (!isInCi && isTTY) {
 				this.options.stdout.write(atomicUpdateStart);
 			}
 			this.onRenderInternal(didResize);
 		} finally {
-			if (!isInCi) {
+			if (!isInCi && isTTY) {
 				this.options.stdout.write(atomicUpdateEnd);
 			}
 		}
@@ -231,7 +232,7 @@ export default class Ink {
 		let startOscCommand: string;
 		let endOscCommand: string;
 
-		if (isInCi || !this.options.osc133) {
+		if (isInCi || !isTTY || !this.options.osc133) {
 			startOscPrompt = '';
 			endOscPrompt = '';
 			startOscCommand = '';
@@ -244,7 +245,7 @@ export default class Ink {
 		}
 
 		// Colors make everything more fun.
-		if (this.options.debug) {
+		if (this.options.debug && isTTY) {
 			// Dark blue is for prompt mode.  Exiting prompt
 			// mode resets the background color.
 			startOscPrompt += '\x1b[48;5;17m';
