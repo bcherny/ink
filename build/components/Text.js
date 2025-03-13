@@ -4,7 +4,7 @@ import colorize from '../colorize.js';
 /**
  * This component can display text, and change its style to make it colorful, bold, underline, italic or strikethrough.
  */
-export default function Text({ color, backgroundColor, dimColor = false, bold = false, italic = false, underline = false, strikethrough = false, inverse = false, wrap = 'wrap', children, }) {
+export default function Text({ color, backgroundColor, dimColor = false, bold = false, italic = false, underline = false, strikethrough = false, inverse = false, wrap = 'wrap', osc133prompt = false, children, }) {
     if (children === undefined || children === null) {
         return null;
     }
@@ -33,7 +33,10 @@ export default function Text({ color, backgroundColor, dimColor = false, bold = 
         if (inverse) {
             children = chalk.inverse(children);
         }
-        return children;
+        return {
+            line: children,
+            isPrompt: osc133prompt,
+        };
     };
     return (React.createElement("ink-text", { style: { flexGrow: 0, flexShrink: 1, flexDirection: 'row', textWrap: wrap }, internal_transform: transform }, children));
 }

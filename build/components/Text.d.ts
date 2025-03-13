@@ -42,8 +42,15 @@ export type Props = {
      */
     readonly wrap?: Styles['textWrap'];
     readonly children?: ReactNode;
+    /**
+     * This property tells Ink to mark any line containing
+     * this text as a prompt using terminal control codes.  Many terminal
+     * emulators have UI affordances for navigating between prompts and
+     * segmenting the scrollback on prompt boundaries.
+     */
+    readonly osc133prompt?: boolean;
 };
 /**
  * This component can display text, and change its style to make it colorful, bold, underline, italic or strikethrough.
  */
-export default function Text({ color, backgroundColor, dimColor, bold, italic, underline, strikethrough, inverse, wrap, children, }: Props): React.JSX.Element | null;
+export default function Text({ color, backgroundColor, dimColor, bold, italic, underline, strikethrough, inverse, wrap, osc133prompt, children, }: Props): React.JSX.Element | null;

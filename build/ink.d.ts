@@ -8,6 +8,7 @@ export type Options = {
     patchConsole: boolean;
     waitUntilExit?: () => Promise<void>;
     onFlicker?: () => unknown;
+    osc133?: boolean;
 };
 export default class Ink {
     private readonly options;
@@ -29,6 +30,7 @@ export default class Ink {
     unsubscribeExit: () => void;
     calculateLayout: () => void;
     onRender(didResize?: boolean): void;
+    onRenderInternal(didResize: boolean): void;
     render(node: ReactNode): void;
     writeToStdout(data: string): void;
     writeToStderr(data: string): void;
