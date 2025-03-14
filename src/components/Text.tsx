@@ -3,7 +3,6 @@ import chalk, {type ForegroundColorName} from 'chalk';
 import {type LiteralUnion} from 'type-fest';
 import colorize from '../colorize.js';
 import {type Styles} from '../styles.js';
-import {type OutputTransformerResult} from '../render-node-to-output.js';
 
 export type Props = {
 	/**
@@ -54,14 +53,6 @@ export type Props = {
 	readonly wrap?: Styles['textWrap'];
 
 	readonly children?: ReactNode;
-
-        /**
-         * This property tells Ink to mark any line containing
-         * this text as a prompt using terminal control codes.  Many terminal
-         * emulators have UI affordances for navigating between prompts and
-         * segmenting the scrollback on prompt boundaries.
-         */
-	readonly osc133prompt?: boolean;
 };
 
 /**
@@ -77,14 +68,13 @@ export default function Text({
 	strikethrough = false,
 	inverse = false,
 	wrap = 'wrap',
-	osc133prompt = false,
 	children,
 }: Props) {
 	if (children === undefined || children === null) {
 		return null;
 	}
 
-	const transform = (children: string): OutputTransformerResult => {
+	const transform = (children: string): string => {
 		if (dimColor) {
 			children = chalk.dim(children);
 		}
@@ -117,10 +107,7 @@ export default function Text({
 			children = chalk.inverse(children);
 		}
 
-		return {
-			line: children,
-			isPrompt: osc133prompt,
-		};
+		return children;
 	};
 
 	return (

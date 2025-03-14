@@ -8,15 +8,11 @@ type Result = {
 	staticOutput: string;
 };
 
-const renderer = (node: DOMElement,
-		  startOscPrompt: string,
-		  endOscPrompt: string): Result => {
+const renderer = (node: DOMElement): Result => {
 	if (node.yogaNode) {
 		const output = new Output({
 			width: node.yogaNode.getComputedWidth(),
 			height: node.yogaNode.getComputedHeight(),
-			startOscPrompt: startOscPrompt,
-			endOscPrompt: endOscPrompt,
 		});
 
 		renderNodeToOutput(node, output, {skipStaticElements: true});
@@ -27,8 +23,6 @@ const renderer = (node: DOMElement,
 			staticOutput = new Output({
 				width: node.staticNode.yogaNode.getComputedWidth(),
 				height: node.staticNode.yogaNode.getComputedHeight(),
-				startOscPrompt: startOscPrompt,
-				endOscPrompt: endOscPrompt,
 			});
 
 			renderNodeToOutput(node.staticNode, staticOutput, {
