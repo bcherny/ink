@@ -1,12 +1,10 @@
 import renderNodeToOutput from './render-node-to-output.js';
 import Output from './output.js';
-const renderer = (node, startOscPrompt, endOscPrompt) => {
+const renderer = (node) => {
     if (node.yogaNode) {
         const output = new Output({
             width: node.yogaNode.getComputedWidth(),
             height: node.yogaNode.getComputedHeight(),
-            startOscPrompt: startOscPrompt,
-            endOscPrompt: endOscPrompt,
         });
         renderNodeToOutput(node, output, { skipStaticElements: true });
         let staticOutput;
@@ -14,8 +12,6 @@ const renderer = (node, startOscPrompt, endOscPrompt) => {
             staticOutput = new Output({
                 width: node.staticNode.yogaNode.getComputedWidth(),
                 height: node.staticNode.yogaNode.getComputedHeight(),
-                startOscPrompt: startOscPrompt,
-                endOscPrompt: endOscPrompt,
             });
             renderNodeToOutput(node.staticNode, staticOutput, {
                 skipStaticElements: false,

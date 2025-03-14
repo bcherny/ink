@@ -10,8 +10,6 @@ import { type OutputTransformer } from './render-node-to-output.js';
 type Options = {
     width: number;
     height: number;
-    startOscPrompt?: string;
-    endOscPrompt?: string;
 };
 type Clip = {
     x1: number | undefined;
@@ -22,12 +20,10 @@ type Clip = {
 export default class Output {
     width: number;
     height: number;
-    startOscPrompt: string;
-    endOscPrompt: string;
     private readonly operations;
     private charCache;
     private styledCharsToStringCache;
-    constructor({ width, height, startOscPrompt, endOscPrompt }: Options);
+    constructor(options: Options);
     write(x: number, y: number, text: string, options: {
         transformers: OutputTransformer[];
     }): void;

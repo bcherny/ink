@@ -5,16 +5,13 @@ import stringWidth from 'string-width';
 export default class Output {
     width;
     height;
-    startOscPrompt;
-    endOscPrompt;
     operations = [];
     charCache = {};
     styledCharsToStringCache = {};
-    constructor({ width, height, startOscPrompt, endOscPrompt }) {
+    constructor(options) {
+        const { width, height } = options;
         this.width = width;
         this.height = height;
-        this.startOscPrompt = startOscPrompt || '';
-        this.endOscPrompt = endOscPrompt || '';
     }
     write(x, y, text, options) {
         const { transformers } = options;
@@ -41,10 +38,8 @@ export default class Output {
         });
     }
     get() {
+        // Initialize output array with a specific set of rows, so that margin/padding at the bottom is preserved
         const output = [];
-        // Per-line flag indicating whether any widget on that line
-        // is a prompt.
-        const isPromptLine = [];
         for (let y = 0; y < this.height; y++) {
             const row = [];
             for (let x = 0; x < this.width; x++) {
@@ -56,7 +51,6 @@ export default class Output {
                 });
             }
             output.push(row);
-            isPromptLine.push(false);
         }
         const clips = [];
         for (const operation of this.operations) {
@@ -111,21 +105,13 @@ export default class Output {
                 }
                 let offsetY = 0;
                 for (let [index, line] of lines.entries()) {
-                    const currentY = y + offsetY;
-                    const currentLine = output[currentY];
-                    // Line can be missing if `text` is taller than height of pre-initialized output
+                    const currentLine = output[y + offsetY];
+                    // Line can be missing if `text` is taller than height of pre-initialized `this.output`
                     if (!currentLine) {
                         continue;
                     }
                     for (const transformer of transformers) {
-                        let result = transformer(line, index);
-                        if (typeof result == 'string') {
-                            result = { line: result };
-                        }
-                        if (result?.isPrompt) {
-                            isPromptLine[currentY] = true;
-                        }
-                        line = result.line;
+                        line = transformer(line, index);
                     }
                     if (!this.charCache.hasOwnProperty(line)) {
                         this.charCache[line] = styledCharsFromTokens(tokenize(line));
@@ -151,16 +137,8 @@ export default class Output {
                 }
             }
         }
-        // Group lines by isPrompt to add OSC control sequences at boundaries
-        let currentIsPrompt = false;
-        let result = '';
-        // Process output lines and add OSC prompt markers at group boundaries
-        for (let i = 0; i < output.length; i++) {
-            const line = output[i];
-            // Skip empty lines at the end
-            if (i === output.length - 1 && line.every(char => char.value === ' ')) {
-                continue;
-            }
+        const generatedOutput = output
+            .map(line => {
             // See https://github.com/vadimdemedes/ink/pull/564#issuecomment-1637022742
             const lineWithoutEmptyItems = line.filter(item => item !== undefined);
             const key = JSON.stringify(lineWithoutEmptyItems);
@@ -168,32 +146,11 @@ export default class Output {
                 const result = styledCharsToString(lineWithoutEmptyItems).trimEnd();
                 this.styledCharsToStringCache[key] = result;
             }
-            const lineText = this.styledCharsToStringCache[key];
-            // Use our local tracking array
-            const isPromptLineValue = isPromptLine[i];
-            // Add prompt start marker at group boundaries
-            if (!currentIsPrompt && isPromptLineValue) {
-                result += this.startOscPrompt;
-                currentIsPrompt = true;
-            }
-            // Add prompt end marker at group boundaries
-            if (currentIsPrompt && !isPromptLineValue) {
-                result += this.endOscPrompt;
-                currentIsPrompt = false;
-            }
-            // Add the line
-            result += lineText;
-            // Add newline if not the last line
-            if (i < output.length - 1) {
-                result += '\n';
-            }
-        }
-        // Ensure prompt is closed at the end if needed
-        if (currentIsPrompt) {
-            result += this.endOscPrompt;
-        }
+            return this.styledCharsToStringCache[key];
+        })
+            .join('\n');
         return {
-            output: result,
+            output: generatedOutput,
             height: output.length,
         };
     }

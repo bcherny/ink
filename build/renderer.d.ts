@@ -4,5 +4,5 @@ type Result = {
     outputHeight: number;
     staticOutput: string;
 };
-declare const renderer: (node: DOMElement, startOscPrompt: string, endOscPrompt: string) => Result;
+declare const renderer: (node: DOMElement) => Result;
 export default renderer;
