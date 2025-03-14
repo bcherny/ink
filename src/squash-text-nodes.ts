@@ -30,17 +30,11 @@ const squashTextNodes = (node: DOMElement): string => {
 
 			// Since these text nodes are being concatenated, `Output` instance won't be able to
 			// apply children transform, so we have to do it manually here for each text node
-			// We can throw away any metadata the transformer returns since we're not using
-			// the result of this function alone for rendering.
 			if (
 				nodeText.length > 0 &&
 				typeof childNode.internal_transform === 'function'
 			) {
-                                let result = childNode.internal_transform(nodeText, index);
-                                if (typeof result == 'string') {
-                                        result = {line: result};
-                                }
-				nodeText = result.line;
+				nodeText = childNode.internal_transform(nodeText, index);
 			}
 		}
 
