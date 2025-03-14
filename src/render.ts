@@ -46,6 +46,12 @@ export type RenderOptions = {
 	 * Callback for when Ink re-renders the scrollback.
 	 */
 	onFlicker?: () => unknown;
+
+	/**
+	  * Whether to use OSC133 escape sequences for the terminal
+	  * to mark prompt regions.
+	  */
+	osc133?: boolean;
 };
 
 export type Instance = {
