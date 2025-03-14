@@ -201,13 +201,14 @@ export default class Ink {
 	onRender(didResize = false) {
 		// Ask terminal emulators not to redraw the framebuffer
 		// while we're in the middle of a atomic update.  Avoids flicker.
+		const stdoutIsTestStream = 'frames' in this.options.stdout;
 		try {
-			if (!isInCi && isTTY) {
+			if (!isInCi && isTTY && !stdoutIsTestStream) {
 				this.options.stdout.write(atomicUpdateStart);
 			}
 			this.onRenderInternal(didResize);
 		} finally {
-			if (!isInCi && isTTY) {
+			if (!isInCi && isTTY && !stdoutIsTestStream) {
 				this.options.stdout.write(atomicUpdateEnd);
 			}
 		}
