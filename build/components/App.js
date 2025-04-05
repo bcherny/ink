@@ -8,6 +8,7 @@ import StdoutContext from './StdoutContext.js';
 import StderrContext from './StderrContext.js';
 import FocusContext from './FocusContext.js';
 import ErrorOverview from './ErrorOverview.js';
+import { parseMultipleKeypresses, INITIAL_STATE } from '../parse-keypress.js';
 const tab = '\t';
 const shiftTab = '\u001B[Z';
 const escape = '\u001B';
@@ -30,6 +31,12 @@ export default class App extends PureComponent {
     rawModeEnabledCount = 0;
     // eslint-disable-next-line @typescript-eslint/naming-convention
     internal_eventEmitter = new EventEmitter();
+    keyParseState = INITIAL_STATE;
+    // Timer for flushing incomplete escape sequences
+    incompleteEscapeTimer = null;
+    // Timeout durations for incomplete sequences (ms)
+    NORMAL_TIMEOUT = 50; // Short timeout for regular esc sequences
+    PASTE_TIMEOUT = 500; // Longer timeout for paste operations
     // Determines if TTY is supported on the provided stdin
     isRawModeSupported() {
         return this.props.stdin.isTTY;
@@ -93,6 +100,11 @@ export default class App extends PureComponent {
     }
     componentWillUnmount() {
         cliCursor.show(this.props.stdout);
+        // Clear any pending timers
+        if (this.incompleteEscapeTimer) {
+            clearTimeout(this.incompleteEscapeTimer);
+            this.incompleteEscapeTimer = null;
+        }
         // ignore calling setRawMode on an handle stdin it cannot be called
         if (this.isRawModeSupported()) {
             this.handleSetRawMode(false);
@@ -118,23 +130,59 @@ export default class App extends PureComponent {
                 stdin.ref();
                 stdin.setRawMode(true);
                 stdin.addListener('readable', this.handleReadable);
+                // Enable bracketed paste mode
+                this.props.stdout.write('\x1b[?2004h');
             }
             this.rawModeEnabledCount++;
             return;
         }
         // Disable raw mode only when no components left that are using it
         if (--this.rawModeEnabledCount === 0) {
+            // Disable bracketed paste mode
+            this.props.stdout.write('\x1b[?2004l');
             stdin.setRawMode(false);
             stdin.removeListener('readable', this.handleReadable);
             stdin.unref();
+        }
+    };
+    // Helper to flush incomplete escape sequences
+    flushIncomplete = () => {
+        // Clear the timer reference
+        this.incompleteEscapeTimer = null;
+        // Only proceed if we have incomplete sequences
+        if (!this.keyParseState.incomplete)
+            return;
+        // Process incomplete as a flush operation (input=null)
+        // This reuses all existing parsing logic
+        this.processInput(null);
+    };
+    // Process input through the parser and handle the results
+    processInput = (input) => {
+        // Parse input using our state machine
+        const [keys, newState] = parseMultipleKeypresses(this.keyParseState, input);
+        this.keyParseState = newState;
+        // Process each key individually
+        for (const key of keys) {
+            // For regular key handling
+            this.handleInput(key.sequence);
+            // Emit the parsed key object for consumers
+            this.internal_eventEmitter.emit('input', key);
+        }
+        // If we have incomplete escape sequences, set a timer to flush them
+        if (this.keyParseState.incomplete) {
+            // Cancel any existing timer first
+            if (this.incompleteEscapeTimer) {
+                clearTimeout(this.incompleteEscapeTimer);
+            }
+            this.incompleteEscapeTimer = setTimeout(this.flushIncomplete, this.keyParseState.mode === 'IN_PASTE' ? this.PASTE_TIMEOUT : this.NORMAL_TIMEOUT);
         }
     };
     handleReadable = () => {
         let chunk;
         // eslint-disable-next-line @typescript-eslint/ban-types
         while ((chunk = this.props.stdin.read()) !== null) {
-            this.handleInput(chunk);
-            this.internal_eventEmitter.emit('input', chunk);
+            // Process the input chunk
+            this.processInput(chunk);
         }
     };
     handleInput = (input) => {

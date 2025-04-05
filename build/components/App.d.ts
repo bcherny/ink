@@ -33,12 +33,18 @@ export default class App extends PureComponent<Props, State> {
     };
     rawModeEnabledCount: number;
     internal_eventEmitter: EventEmitter<[never]>;
+    keyParseState: import("../parse-keypress.js").KeyParseState;
+    incompleteEscapeTimer: NodeJS.Timeout | null;
+    readonly NORMAL_TIMEOUT = 50;
+    readonly PASTE_TIMEOUT = 500;
     isRawModeSupported(): boolean;
     render(): React.JSX.Element;
     componentDidMount(): void;
     componentWillUnmount(): void;
     componentDidCatch(error: Error): void;
     handleSetRawMode: (isEnabled: boolean) => void;
+    flushIncomplete: () => void;
+    processInput: (input: string | Buffer | null) => void;
     handleReadable: () => void;
     handleInput: (input: string) => void;
     handleExit: (error?: Error) => void;

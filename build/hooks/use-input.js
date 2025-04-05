@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import parseKeypress, { nonAlphanumericKeys } from '../parse-keypress.js';
+import { nonAlphanumericKeys } from '../parse-keypress.js';
 import reconciler from '../reconciler.js';
 import useStdin from './use-stdin.js';
 /**
@@ -42,9 +42,7 @@ const useInput = (inputHandler, options = {}) => {
         if (options.isActive === false) {
             return;
         }
-        const handleData = (data) => {
-            const keypress = parseKeypress(data);
-            keypress.name;
+        const handleData = (keypress) => {
             const key = {
                 upArrow: keypress.name === 'up',
                 downArrow: keypress.name === 'down',
