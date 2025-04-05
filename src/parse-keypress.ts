@@ -6,6 +6,183 @@ const metaKeyCodeRe = /^(?:\x1b)([a-zA-Z0-9])$/;
 const fnKeyRe =
 	/^(?:\x1b+)(O|N|\[|\[\[)(?:(\d+)(?:;(\d+))?([~^$])|(?:1;)?(\d+)?([a-zA-Z]))/;
 
+// Bracketed paste mode constants
+const pasteBegin = '\x1b[200~';
+const pasteEnd = '\x1b[201~';
+
+// Helper function to create a paste key event
+function createPasteKey(content: string): ParsedKey {
+  return {
+    name: '',           // No special key name for pastes
+    fn: false,
+    ctrl: false,
+    meta: false,
+    shift: false,
+    option: false,
+    sequence: content,  // Use the full content as-is
+    raw: content,
+    isPasted: true      // Mark this key as coming from paste content
+  };
+}
+
+const anyEscapeRe = new RegExp(
+  '^(.*?)(' + [
+    // Order from longest to shortest patterns to favor longer matches
+    
+    // OSC: Operating System Command (ESC ])
+    '\\x1b\\][0-9]*(?:;[^\\x07\\x1b]*)*(?:\\x07|\\x1b\\\\)',
+    
+    // DCS: Device Control String (ESC P)
+    '\\x1bP[^\\x1b]*\\x1b\\\\',
+    
+    // CSI: Control Sequence Introducer (ESC [)
+    '\\x1b\\[[0-9]*(?:;[0-9]*)*[A-Za-z~]',
+    
+    // SS3: Single Shift 3 (ESC O)
+    '\\x1bO[A-Za-z]',
+
+    // Meta + character
+    '\\x1b[\\x00-\\x7F]',
+
+    // Double ESC
+    '\\x1b\\x1b',
+
+    // Treat end of string as escape (simplifies logic)
+    // Place this last to ensure it's only used as a last resort
+    '$',
+
+  ].map(part => `(?:${part})`).join('|') + ')', 's'); // Add 's' flag for dotall mode
+
+// Enhanced regex that always matches the entire string, separating it into:
+// Group 1: Everything before any incomplete escape sequence
+// Group 2: The incomplete escape sequence itself (or empty if none)
+const incompleteEscapeRe = new RegExp(
+  '(.*?)(' + [
+    // Order from longest to shortest patterns to favor longer matches
+    
+    // Partial OSC
+    '\\x1b\\][0-9]*(?:;[^\\x07\\x1b]*)*$',
+    
+    // Partial DCS
+    '\\x1bP[^\\x1b]*$',
+    
+    // Partial CSI
+    '\\x1b\\[[0-9]*(?:;[0-9]*)*$',
+    
+    // Partial SS3
+    '\\x1bO$',
+    
+    // Just ESC at the end
+    '\\x1b$',
+    
+    // No incomplete sequence - match end of text (put this last)
+    '$'
+  ].map(part => `(?:${part})`).join('|') + ')', 's');
+
+export type KeyParseState = {
+  mode: 'NORMAL' | 'IN_PASTE';
+  incomplete: string;
+};
+
+export type KeyParseResult = {
+  state: KeyParseState;
+  keys: ParsedKey[];
+};
+
+export const INITIAL_STATE: KeyParseState = {
+  mode: 'NORMAL',
+  incomplete: ''
+};
+
+function inputToString(input: Buffer | string): string {
+  if (Buffer.isBuffer(input)) {
+    if (input[0]! > 127 && input[1] === undefined) {
+      (input[0] as unknown as number) -= 128;
+      return '\x1b' + String(input);
+    } else {
+      return String(input);
+    }
+  } else if (input !== undefined && typeof input !== 'string') {
+    return String(input);
+  } else if (!input) {
+    return '';
+  } else {
+    return input;
+  }
+}
+
+export function parseMultipleKeypresses(prevState: KeyParseState, input: Buffer | string | null = ''): [ParsedKey[], KeyParseState] {
+  // Special case: input=null is a "flush" operation
+  const isFlush = input === null;
+  const inputString = isFlush ? '' : inputToString(input);
+
+  // Avoid superlinear compute for large pastes in small chunks.
+  // If we're already in paste mode, we don't need to search ALL of
+  // our saved incomplete text for the end-paste marker --- just like
+  // last bit of it.  If the end paste marker occurred before the very
+  // end of the incomplete string, it would have ended already and we
+  // wouldn't be here.
+  if (prevState.mode === 'IN_PASTE') {
+    const search = prevState.incomplete.slice(-pasteEnd.length + 1) + inputString;
+    if (search.indexOf(pasteEnd) === -1) {
+      return [[], { ...prevState, incomplete: prevState.incomplete + inputString }];
+    }
+  }
+  
+  // Normal processing path
+  let text = prevState.incomplete + inputString;
+  let state = { ...prevState, incomplete: '' };
+  const keys: ParsedKey[] = [];
+
+  const matchers = {
+    'NORMAL': () => {
+      const m = anyEscapeRe.exec(text)!;  // Always matches
+      text = text.substring(m[0].length);
+      let prefix = m[1]!;
+      
+      // Only check for incomplete sequences if we're not flushing
+      if (!m[2] && !isFlush) {  // End of input: check for incomplete escapes
+        const incompleteMatch = incompleteEscapeRe.exec(prefix)!;
+        state.incomplete = incompleteMatch[2]!;
+        prefix = incompleteMatch[1]!;
+      }
+
+      if (prefix) {
+        keys.push(parseKeypress(prefix));
+      }
+
+      if (m[2] === pasteBegin) {
+        state.mode = 'IN_PASTE';
+      } else if (m[2]) {
+        keys.push(parseKeypress(m[2]));
+      }
+    },
+    'IN_PASTE': () => {
+      let indx = text.indexOf(pasteEnd);
+      if (indx === -1) {  // no terminator
+        if (!isFlush) {  // keep accumulating
+          state.incomplete = text;
+          text = '';
+          return;
+        }
+        indx = text.length;
+      }
+
+      // We found paste end. Create a paste key event for the content
+      const pasteContent = text.substring(0, indx);
+      if (pasteContent) {
+        keys.push(createPasteKey(pasteContent));
+      }
+
+      text = text.substring(indx + pasteEnd.length);
+      state.mode = 'NORMAL';
+    },
+  }
+
+  while(text) { matchers[state.mode](); }
+  return [keys, state]
+}
+
 const keyName: Record<string, string> = {
 	/* xterm/gnome ESC O letter */
 	OP: 'f1',
@@ -126,7 +303,7 @@ const isCtrlKey = (code: string) => {
 	].includes(code);
 };
 
-type ParsedKey = {
+export type ParsedKey = {
 	fn: boolean;
 	name: string;
 	ctrl: boolean;
@@ -136,23 +313,11 @@ type ParsedKey = {
 	sequence: string;
 	raw: string | undefined;
 	code?: string;
+	isPasted: boolean; // Indicates this key came from pasted content
 };
 
-const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
+const parseKeypress = (s: string = ''): ParsedKey => {
 	let parts;
-
-	if (Buffer.isBuffer(s)) {
-		if (s[0]! > 127 && s[1] === undefined) {
-			(s[0] as unknown as number) -= 128;
-			s = '\x1b' + String(s);
-		} else {
-			s = String(s);
-		}
-	} else if (s !== undefined && typeof s !== 'string') {
-		s = String(s);
-	} else if (!s) {
-		s = '';
-	}
 
 	const key: ParsedKey = {
 		name: '',
@@ -163,6 +328,7 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 		option: false,
 		sequence: s,
 		raw: s,
+		isPasted: false, // Default to false for regular keypresses
 	};
 
 	key.sequence = key.sequence || s || key.name;
@@ -257,6 +423,7 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 				fn: false,
 				sequence: s,
 				raw: s,
+				isPasted: false,
 			};
 		case '\u001b[4~':
 			return {
@@ -268,6 +435,7 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 				fn: false,
 				sequence: s,
 				raw: s,
+				isPasted: false,
 			};
 		case '\u001b[5~':
 			return {
@@ -279,6 +447,7 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 				fn: false,
 				sequence: s,
 				raw: s,
+				isPasted: false,
 			};
 		case '\u001b[6~':
 			return {
@@ -290,6 +459,7 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 				fn: false,
 				sequence: s,
 				raw: s,
+				isPasted: false,
 			};
 		case '\u001b[1;5D':
 			return {
@@ -301,6 +471,7 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 				fn: false,
 				sequence: s,
 				raw: s,
+				isPasted: false,
 			};
 		case '\u001b[1;5C':
 			return {
@@ -312,6 +483,7 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 				fn: false,
 				sequence: s,
 				raw: s,
+				isPasted: false,
 			};
 		case '\u001b[1~':
 			return {
@@ -323,6 +495,7 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 				option: false,
 				sequence: s,
 				raw: s,
+				isPasted: false,
 			};
 		case '\u001b[4~':
 			return {
@@ -334,10 +507,9 @@ const parseKeypress = (s: Buffer | string = ''): ParsedKey => {
 				option: false,
 				sequence: s,
 				raw: s,
+				isPasted: false,
 			};
 	}
 
 	return key;
 };
-
-export default parseKeypress;
